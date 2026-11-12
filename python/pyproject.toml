@@ -36,3 +36,6 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["sm_profiler*"]
+
+[tool.setuptools]
+py-modules = ["sm_profiler_v2"]

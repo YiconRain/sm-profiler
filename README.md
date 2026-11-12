@@ -232,3 +232,51 @@ python demo.py
 - **2D/3D block support**: `sm_profiler_get_warp_id()` works correctly for all block dimensions
 - **Per-launch init**: Call `sm_profiler_init_buffer()` / `profiler.init_buffer()` before each kernel
 - **Event IDs**: Must be 0-31
+
+# Version 2 CUDA Recorder
+
+`cuda/sm_profiler_v2.cuh` and `python/sm_profiler_v2.py` are an additive,
+incompatible layout, identified by schema version 2 in the host sidecar. Legacy
+CUDA and Triton interfaces continue to use their existing layout; they cannot
+read v2 buffers. V2 is CUDA-only and requires a little-endian 64-bit host.
+
+Allocate a `Record[blocks * groups * capacity]` and a uint32 attempted counter
+for each `(block, group)` stream. Reset counters before every launch using the
+launch stream, retain buffer ownership until export completes, and pass a
+`Context`. Exactly one lane may write each stream. The caller supplies the
+selection predicate; automatic grouping uses the complete linear CUDA warp
+index. A selected subset still requires the full index space.
+
+Construct a `Range(context, phase, site, payload0, payload1, selected)` in the
+observed scope. `finish()` or its destructor closes that exact token; overlapping
+and repeated phase IDs need no active table. Type and site IDs are uint32 values,
+independent of record capacity. `kind=1` records an instant. Do not copy tokens
+or add synchronization to align observations. Records retain raw globaltimer
+nanoseconds, SM, CTA, warp and two uninterpreted payloads. Launch/replay identity
+and schema belong in the host sidecar, since buffers are per launch.
+
+The decoder requires the sidecar `schema_version` and explicit `sentinel_phase`
+and `sentinel_site` keyword arguments. Each expected track must contain exactly
+one valid enclosing range at that site. It retains attempted/stored/drop counts,
+rejects malformed dimensions/counters, and checks invalid timestamps, duplicate
+sentinels and unclosed intervals. Expected tracks must be nonempty. Applications must
+also validate expected sites against their source and independent work metadata.
+`from sm_profiler_v2 import decode, chrome_trace` is the installed import path.
+`chrome_trace(records, names, diagnostics)` refuses incomplete captures unless
+`allow_partial=True`; the returned JSON-ready object retains diagnostics, partial
+status and raw time origin. Ranges use complete X events, instants use thread-scope
+i events; use a JSON serializer for escaping. The CUDA header remains source-only.
+For compact archives, concatenate each stream's stored prefix in linear track
+order and retain all attempted counters and capacity. `decode(..., packed=True)`
+reads that representation without allocating unused capacity.
+Counters saturate at UINT32_MAX; a saturated counter makes completeness false,
+and its drop count is only a lower bound. The application must allocate valid
+device buffers for all declared dimensions and select exactly one writer per
+stream. The recorder cannot check allocation sizes or detect multiple writers.
+
+This additive API is experimental and source-reviewed. Previous application
+captures are not acceptance evidence for this revision. Target compilation,
+runtime capture and format round-trip validation remain pending. No hardware
+utilization, numerical correctness or instrumentation-overhead claim is made.
+Legacy CUDA/Triton remains separate: its 32-type active table cannot represent
+overlapping same-type ranges; legacy exports are not v2 completeness evidence.

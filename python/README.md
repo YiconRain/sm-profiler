@@ -2,6 +2,15 @@
 
 A simple profiling library for Triton kernels with Chrome Trace export.
 
+The distribution also includes the independent experimental CUDA v2 decoder:
+`from sm_profiler_v2 import decode, chrome_trace`. It uses only the Python
+standard library. The CUDA recorder header is supplied in the source repository
+at `cuda/sm_profiler_v2.cuh`; it is not part of the Python wheel.
+V2 decoding requires schema identity, a nonempty independent expected-track set
+and explicit sentinel phase/site. Pass its diagnostics to `chrome_trace`;
+incomplete captures require `allow_partial=True` and retain their diagnostics.
+See the repository README for the incompatible v2 record layout and limitations.
+
 ## Installation
 
 ```bash
