@@ -274,6 +274,18 @@ and its drop count is only a lower bound. The application must allocate valid
 device buffers for all declared dimensions and select exactly one writer per
 stream. The recorder cannot check allocation sizes or detect multiple writers.
 
+For optional shared staging, give each selected writer a private `Record[capacity]`
+slice and one uint32 counter in shared memory through `Context.staged_records`
+and `Context.staged_attempted`. Initialize that counter in the owning lane before
+its first range. The same lane must call `flush(context)` after closing every
+range, before kernel return. The caller owns shared allocation, alignment, launch
+resource checks and lifetime. No recorder barrier is inserted. Flush copies the
+stored prefix and attempted counter to the ordinary global layout, so the same
+v2 decoder and completeness checks apply to both storage modes. Saturation and
+dropped records remain visible. A sentinel closed before flush excludes flush
+from its marker envelope; kernel-event timing includes the tail copy. Shared
+staging is source-reviewed and requires target-specific runtime validation.
+
 This additive API is experimental and source-reviewed. Previous application
 captures are not acceptance evidence for this revision. Target compilation,
 runtime capture and format round-trip validation remain pending. No hardware

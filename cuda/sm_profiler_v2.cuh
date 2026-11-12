@@ -14,6 +14,10 @@ struct Context {
   Record* records = nullptr;
   uint32_t* attempted = nullptr;
   uint32_t blocks = 0, groups = 0, capacity = 0;
+  // Optional writer-private shared slice. The caller owns initialization and
+  // lifetime; no other thread may touch this slice or its attempted counter.
+  Record* staged_records = nullptr;
+  uint32_t* staged_attempted = nullptr;
 };
 __device__ __forceinline__ uint64_t timestamp() {
   uint64_t value;
@@ -33,14 +37,15 @@ struct Range {
     uint32_t group = thread / 32;
     if (block >= context.blocks || group >= context.groups) return;
     size_t track = size_t(block) * context.groups + group;
-    uint32_t index = context.attempted[track];
+    uint32_t* attempted = context.staged_attempted ? context.staged_attempted : context.attempted + track;
+    uint32_t index = *attempted;
     // Saturate so an exhausted counter cannot wrap and overwrite earlier records.
     if (index == UINT32_MAX) return;
-    context.attempted[track] = index + 1;
+    *attempted = index + 1;
     if (index >= context.capacity) return;
     uint32_t sm;
     asm volatile("mov.u32 %0, %%smid;" : "=r"(sm));
-    record = context.records + size_t(track) * context.capacity + index;
+    record = (context.staged_records ? context.staged_records : context.records + size_t(track) * context.capacity) + index;
     *record = {0, 0, payload0, payload1, phase, site, block, group, sm, kind, 0, 0};
     record->start_ns = timestamp();
     if (kind) { record->end_ns = record->start_ns; record = nullptr; }
@@ -52,4 +57,18 @@ struct Range {
   }
   __device__ __forceinline__ ~Range() { finish(); }
 };
+// Call only after all this writer's ranges have closed. Each writer flushes its
+// own slice without a CTA barrier. The caller includes this in kernel timing.
+__device__ __forceinline__ void flush(Context context) {
+  if (!context.staged_records || !context.staged_attempted) return;
+  size_t block = (size_t(blockIdx.z) * gridDim.y + blockIdx.y) * gridDim.x + blockIdx.x;
+  uint32_t thread = (threadIdx.z * blockDim.y + threadIdx.y) * blockDim.x + threadIdx.x;
+  size_t track = block * context.groups + thread / 32;
+  if (block >= context.blocks || thread / 32 >= context.groups) return;
+  uint32_t attempted = *context.staged_attempted;
+  uint32_t stored = attempted < context.capacity ? attempted : context.capacity;
+  for (uint32_t i = 0; i < stored; ++i)
+    context.records[track * context.capacity + i] = context.staged_records[i];
+  context.attempted[track] = attempted;
+}
 }  // namespace sm_profiler_v2
