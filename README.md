@@ -293,9 +293,11 @@ attempted count. Reset the private counter in its owning lane before observation
 and include its final publication in kernel timing. This preserves the same raw
 record schema, saturation and bounds semantics; it does not promise lower cost.
 
-This additive API is experimental and source-reviewed. Previous application
-captures are not acceptance evidence for this revision. Target compilation,
-runtime capture and format round-trip validation remain pending. No hardware
-utilization, numerical correctness or instrumentation-overhead claim is made.
+This additive API remains experimental. A CUDA consumer has exercised target
+compilation, raw-record decoding and independent source-derived coverage checks
+for direct-global and counter-only shared configurations. This does not validate
+all devices, workloads, overflow paths or record-staging configurations for this
+revision; each consumer still owns those checks. No hardware utilization,
+numerical correctness or general instrumentation-overhead claim is made.
 Legacy CUDA/Triton remains separate: its 32-type active table cannot represent
 overlapping same-type ranges; legacy exports are not v2 completeness evidence.
