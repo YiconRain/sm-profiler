@@ -286,6 +286,13 @@ dropped records remain visible. A sentinel closed before flush excludes flush
 from its marker envelope; kernel-event timing includes the tail copy. Shared
 staging is source-reviewed and requires target-specific runtime validation.
 
+The writer-private counter can also be used without record staging: leave
+`staged_records` null and provide only `staged_attempted`. Records then go directly
+to their ordinary global slots, while `flush(context)` publishes just the final
+attempted count. Reset the private counter in its owning lane before observation,
+and include its final publication in kernel timing. This preserves the same raw
+record schema, saturation and bounds semantics; it does not promise lower cost.
+
 This additive API is experimental and source-reviewed. Previous application
 captures are not acceptance evidence for this revision. Target compilation,
 runtime capture and format round-trip validation remain pending. No hardware

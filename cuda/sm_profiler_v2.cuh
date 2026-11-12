@@ -14,8 +14,9 @@ struct Context {
   Record* records = nullptr;
   uint32_t* attempted = nullptr;
   uint32_t blocks = 0, groups = 0, capacity = 0;
-  // Optional writer-private shared slice. The caller owns initialization and
-  // lifetime; no other thread may touch this slice or its attempted counter.
+  // Optional writer-private shared storage. The counter may be used alone with
+  // direct global records. The caller owns initialization and lifetime; no other
+  // thread may touch this slice or its attempted counter.
   Record* staged_records = nullptr;
   uint32_t* staged_attempted = nullptr;
 };
@@ -60,15 +61,17 @@ struct Range {
 // Call only after all this writer's ranges have closed. Each writer flushes its
 // own slice without a CTA barrier. The caller includes this in kernel timing.
 __device__ __forceinline__ void flush(Context context) {
-  if (!context.staged_records || !context.staged_attempted) return;
+  if (!context.records || !context.attempted || !context.staged_attempted) return;
   size_t block = (size_t(blockIdx.z) * gridDim.y + blockIdx.y) * gridDim.x + blockIdx.x;
   uint32_t thread = (threadIdx.z * blockDim.y + threadIdx.y) * blockDim.x + threadIdx.x;
   size_t track = block * context.groups + thread / 32;
   if (block >= context.blocks || thread / 32 >= context.groups) return;
   uint32_t attempted = *context.staged_attempted;
   uint32_t stored = attempted < context.capacity ? attempted : context.capacity;
-  for (uint32_t i = 0; i < stored; ++i)
-    context.records[track * context.capacity + i] = context.staged_records[i];
+  if (context.staged_records) {
+    for (uint32_t i = 0; i < stored; ++i)
+      context.records[track * context.capacity + i] = context.staged_records[i];
+  }
   context.attempted[track] = attempted;
 }
 }  // namespace sm_profiler_v2
